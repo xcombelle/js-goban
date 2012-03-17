@@ -7,10 +7,10 @@ var Goban = (function() {
         module.exports = this;
     } catch (e) {
     }
-
-    goban.BLACK = 0;
-    goban.WHITE = 1;
-
+	goban.EMPTY = 0;
+    goban.BLACK = 1;
+    goban.WHITE = 2;
+	goban.BORDER = 3;
     goban.CLIView = function(options) {
         this.board = options.board;
 
@@ -18,7 +18,7 @@ var Goban = (function() {
             for ( var i = 0; i < this.board.size; i++ ) {
                 var line = "|";
                 for ( var j = 0; j < this.board.size; j++ ) {
-                    var val = this.board.data[i*this.board.size + j];
+                    var val = this.board.data[i*(this.board.size+2) + j];
                     var char;
                     switch ( val ) {
                         case goban.BLACK:
@@ -27,7 +27,7 @@ var Goban = (function() {
                         case goban.WHITE:
                             char = "○";
                             break;
-                        case undefined:
+                        case goban.EMPTY:
                             char = " ";
                             break;
                     }
@@ -44,15 +44,23 @@ var Goban = (function() {
         this.size = options.size;
 
         this.data = [];
-        for (var i = 0; i < this.size * this.size; i++ ) {
-            this.data[i] = undefined;
+        for (var i = 0; i < (this.size+2) * (this.size+2); i++ ) {
+			if (i%(this.size+2)==0 
+				|| i%(this.size+2)==this.size+1 
+				|| i<(this.size+2) 
+				|| i>=(this.size+2)*(this.size+2)-(this.size+2)) {
+				this.data[i] = goban.BORDER
+			} else {            
+				this.data[i] = goban.EMPTY;
+			}
         }
 
         this.point = function(x, y, value) {
             if (value == undefined) {
-                return this.data[y * this.size + x];
+				
+                return this.data[(y+1) * (this.size+2) + (x+1)];
             } else {
-                this.data[y * this.size + x] = value;
+                this.data[(y+1) * (this.size+2) + (x+1)] = value;
             }
         };
 
@@ -70,26 +78,33 @@ var Goban = (function() {
         };
 
         this.move = function(x, y) {
-            if (this.point(x, y) == undefined) {
+			if (this.point(x, y) == goban.EMPTY) {
                 this.point(x, y, this.turn);
                 this.evaluate(x, y);
                 this.changeTurn();
                 this.lastMove= { x:x, y:y };
             } else {
-                throw "Can't move to this position";
+                throw "Can't move to this position "+ x +","+ y +":"+this.point(x, y);
             }
         };
 
         this.evaluate = function(x, y) {
-            if (this.isDead(x, y, this.turn)) {
-            } else {
-                // no op.
-            }
-        };
-
-        this.isDead = function(x, y, color) {
+			
+            var otherTurn = 2-this.turn+1;
+			var p = (y+1)*(this.size+2)+(x+1);
+			var self = this;
+			this.forneighbourg (p, function (n) {
+				if(self.isDead(n, otherTurn)) {
+                    self.remove(n,otherTurn);
+				}
+            });
+			if(this.isDead(p, this.turn)) {
+                    this.remove(p,this.turn);
+			}
+		}
+        this.isDead = function(n, color) {
             var isChecked = [];
-            return !this.isAlive(x, y, color, isChecked);
+            return !this.isAlive(n, color, isChecked);
         };
 
         this.DEBUG_IS_ALIVE = false;
@@ -98,73 +113,61 @@ var Goban = (function() {
                 console.log(msg);
             }
         };
-
-        this.isAlive = function(x, y, color, isChecked) {
-            var index = x * this.size + y;
-            if ( isChecked[index] ) {
+		this.forneighbourg = function (p,f) {
+			f(p+1);
+			f(p-1);
+			f(p+this.size+2);
+			f(p-(this.size+2));
+		};
+        this.remove = function (p,color) {
+			if (this.data[p]!= color) {
+				return;
+			}            
+			this.data[p] = goban.EMPTY;
+			this.debugIsAlive("removing "+p+" "+this.data[p]);
+            			
+			var self = this;
+            this.forneighbourg (p, function (n) {
+			    self.remove(n, color) ;
+            });
+        };
+        
+        this.isAlive = function(p, color, isChecked) {
+            if ( isChecked[p] ) {
                 return false;
             }
-            isChecked[index] = true;
-
-            this.debugIsAlive("############ called isAlive x: " + x + ", y: " + y);
-            var up = this.point(x, y - 1);
-            if ( y - 1 >= 0 && up === undefined ) {
-                this.debugIsAlive("############ up is blank by isAlive x: " + x + ", y: " + y);
-                return true;
-            }
-
-            var down = this.point(x, y + 1);
-            if ( y + 1 < this.size && down == undefined ) {
-                this.debugIsAlive("############ down is blank by isAlive x: " + x + ", y: " + y);
-                return true;
-            }
-            var left = this.point(x - 1, y);
-            if ( x - 1 >= 0 && left == undefined ) {
-                this.debugIsAlive("############ left is blank by isAlive x: " + x + ", y: " + y);
-                return true;
-            }
-            var right = this.point(x + 1, y);
-            if ( x + 1 < this.size && right == undefined ) {
-                this.debugIsAlive("############ right is blank by isAlive x: " + x + ", y: " + y);
-                return true;
-            }
-
-            // up
-            if ( y - 1 >= 0 && up == color ) {
-                if ( this.isAlive(x, y - 1, color, isChecked) ) {
-                    this.debugIsAlive("############ finish called isAlive x: " + x + ", y: " + y);
-                    return true;
-                }
-            }
-
-            // down
-            if (y + 1 < this.size && down == color && this.isAlive(x, y + 1, color, isChecked)) {
-                this.debugIsAlive("############ finish called isAlive x: " + x + ", y: " + y);
-                return true;
-            }
-
-            // left
-            if (x - 1 >= 0 && left == color && this.isAlive(x - 1, y, color, isChecked)) {
-                this.debugIsAlive("############ finish called isAlive x: " + x + ", y: " + y);
-                return true;
-            }
-
-            // right
-            if (x + 1 < this.size && right == color && this.isAlive(x + 1, y, color, isChecked)) {
-                this.debugIsAlive("############ finish called isAlive x: " + x + ", y: " + y);
-                return true;
-            }
-
-            this.debugIsAlive("############ finish called isAlive( x: " + x + ", y: " + y);
-            return false;
+            isChecked[p] = true;
+			this.debugIsAlive("############ called isAlive p: " + p + " "+color);
+            			
+			if ( this.data[p]== goban.EMPTY) {
+				this.debugIsAlive("############ found alive p: " + p );
+            				
+				return true;
+			}
+			if ( this.data[p]!= color) {
+				this.debugIsAlive("############ not this color p: " + p+" "+color );		
+				return false;
+			}
+			var self = this
+			var alive = false
+            this.forneighbourg (p, function (n) {
+				if (self.isAlive(n,color,isChecked)) {
+					self.debugIsAlive("############ neighbourg is alive p: " + p );	
+					alive = true;
+				}				
+			});
+			this.debugIsAlive("############ neighbourg is alive p: " + p + "alive");	
+					
+            return alive;
         };
 
         this.render = function() {
-            this.viewOptions.board = this;
-            var view = new this.viewClass(this.viewOptions);
-            view.render();
+            
+            this.view.render();
         }
-
+        this.viewOptions.board = this;
+        this.view = new this.viewClass(this.viewOptions);
+            
         return this;
     };
 
@@ -173,26 +176,54 @@ var Goban = (function() {
         this.backgroundColor = options.backgroundColor ? options.backgroundColor : 'rgb(172, 130, 70)';
 
         this.board = options.board;
-
         this.dom = options.document.getElementById(options.id);
         this.canvas = this.dom.getContext('2d');
 
+        this.getCursorPosition= function(e) {
+            var x;
+            var y;
+            if (e.pageX != undefined && e.pageY != undefined) {
+	            x = e.pageX;
+	            y = e.pageY;
+            }
+            else {
+	            x = e.clientX + document.body.scrollLeft + document.documentElement.scrollLeft;
+	            y = e.clientY + document.body.scrollTop + document.documentElement.scrollTop;
+            }
+            x -= this.dom.offsetLeft;
+            y -= this.dom.offsetTop;
+            x = Math.min(x, this.dom.width );
+            y = Math.min(y, this.dom.height);
+            var cell = {x:Math.floor(x/(this.dom.width / this.board.size)),y:Math.floor(y/(this.dom.height / this.board.size))};
+            return cell;
+        }
+        var self = this;
+        this.onClick = function(e) {
+            var cell = self.getCursorPosition(e);
+            self.board.move(cell.x, cell.y);
+			self.board.render();
+	    }
+
+        
         this.render = function() {
             this.drawBoard();
             for (var i = 0; i < this.board.size; i++) {
                 for (var j = 0; j < this.board.size; j++) {
-                    this.drawStone(i, j);
+					                    
+					this.drawStone(i, j);
                 }
             }
-            if (undefined != this.board.lastMove ) {
-                this.drawCircle(this.board.lastMove.x,this.board.lastMove.y);
-            }
+			if (this.board.lastMove) {
+		        if (goban.EMPTY != this.board.lastMove ) {
+		            this.drawCircle(this.board.lastMove.x,this.board.lastMove.y);
+		        }
+			}
         };
 
         this.drawStone = function(x, y) {
-            var value = this.board.data[y * this.board.size + x];
+            var value = this.board.point( x,y);
             switch (value) {
-                case undefined:
+                case goban.EMPTY:
                     break;
                 case goban.BLACK:
                     this.canvas.fillStyle = 'rgb(0, 0, 0)';
@@ -203,7 +234,7 @@ var Goban = (function() {
                     this.canvas.strokeStyle = 'rgb(0, 0, 0)';
                     break;
             }
-            if (value != undefined) {
+            if (value != goban.EMPTY) {
                 var unit_radius = this.dom.width / this.board.size / 2 * 0.8;
                 this.point(x, y, unit_radius);
             }
@@ -211,9 +242,9 @@ var Goban = (function() {
         }
 
         this.drawCircle = function(x, y) {
-            var value = this.board.data[y * this.board.size + x];
+            var value = this.board.point( x,y);
             switch (value) {
-                case undefined:
+                case goban.EMPTY:
                     this.canvas.fillStyle = 'rgb(0, 0, 0, 0)';
                     this.canvas.strokeStyle = 'rgb(0, 0, 0)';
                     break;
@@ -321,7 +352,8 @@ var Goban = (function() {
             this.canvas.fillStyle = this.backgroundColor;
             this.canvas.fillRect(0, 0, this.dom.width, this.dom.height);
         }
-
+        
+        this.dom.addEventListener("click", this.onClick, false);
         return this;
     };
 
